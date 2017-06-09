@@ -3,8 +3,8 @@
 /*
 Plugin Name: Gravity Forms Emma Add-On
 Plugin URI: http://www.gravityforms.com
-Description: Integrates Gravity Forms with Emma allowing form submissions to be automatically sent to your Emma account.
-Version: 1.1
+Description: Integrates Gravity Forms with Emma, allowing form submissions to be automatically sent to your Emma account.
+Version: 1.2
 Author: rocketgenius
 Author URI: http://www.rocketgenius.com
 Text Domain: gravityformsemma
@@ -29,7 +29,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 
-define( 'GF_EMMA_VERSION', '1.1' );
+define( 'GF_EMMA_VERSION', '1.2' );
 
 add_action( 'gform_loaded', array( 'GF_Emma_Bootstrap', 'load' ), 5 );
 

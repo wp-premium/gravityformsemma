@@ -5,7 +5,7 @@ GFForms::include_feed_addon_framework();
 class GFEmma extends GFFeedAddOn {
 
 	protected $_version = GF_EMMA_VERSION;
-	protected $_min_gravityforms_version = '1.9.10.19';
+	protected $_min_gravityforms_version = '1.9.14.26';
 	protected $_slug = 'gravityformsemma';
 	protected $_path = 'gravityformsemma/emma.php';
 	protected $_full_path = __FILE__;
@@ -156,7 +156,7 @@ class GFEmma extends GFFeedAddOn {
 			array(
 				'title'       => esc_html__( 'Emma Account Information', 'gravityformsemma' ),
 				'description' => '<p>' . sprintf(
-						esc_html__( 'Emma makes it easy to send email newsletters to your customers, manage your subscriber lists, and track campaign performance. Use Gravity Forms to collect customer information and automatically add them to your Emma member groups. If you don\'t have a Emma account, you can %1$s sign up for one here.%2$s', 'gravityformsemma' ),
+						esc_html__( 'Emma makes it easy to send email newsletters to your customers, manage your subscriber lists, and track campaign performance. Use Gravity Forms to collect customer information and automatically add it to your Emma member groups. If you don\'t have an Emma account, you can %1$s sign up for one here.%2$s', 'gravityformsemma' ),
 						'<a href="http://myemma.com/partners/get-started?utm_source=GravityForms&utm_medium=integrationpartner&utm_campaign=GravityForms-integrationpartner-partner-trial" target="_blank">', '</a>'
 					) . '</p>',
 				'fields'      => array(
@@ -204,6 +204,18 @@ class GFEmma extends GFFeedAddOn {
 
 		return $this->has_valid_account_id();
 
+	}
+
+	/**
+	 * Enable feed duplication.
+	 * 
+	 * @access public
+	 * @return bool
+	 */
+	public function can_duplicate_feed( $id ) {
+		
+		return true;
+		
 	}
 
 	/**
