@@ -1019,7 +1019,16 @@
 			$ch = curl_init($url);
 			curl_setopt($ch, CURLOPT_USERPWD, "{$this->_pub_key}:{$this->_priv_key}");
 			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
+			/***
+			 * Determines if the cURL CURLOPT_SSL_VERIFYPEER option is enabled.
+			 *
+			 * @since 1.2
+			 *
+			 * @param bool is_enabled True to enable peer verification. False to bypass peer verification. Defaults to true.
+			 */
+			$verify_peer = apply_filters( 'gform_emma_verifypeer', true );
+			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verify_peer);
 			
 			if(isset($verb)) {
 				if($verb == "post") {
