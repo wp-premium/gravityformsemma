@@ -1,5 +1,7 @@
 <?php
 
+defined( 'ABSPATH' ) || die();
+
 GFForms::include_feed_addon_framework();
 
 class GFEmma extends GFFeedAddOn {
@@ -12,7 +14,7 @@ class GFEmma extends GFFeedAddOn {
 	protected $_url = 'http://www.gravityforms.com';
 	protected $_title = 'Gravity Forms Emma Add-On';
 	protected $_short_title = 'Emma';
-	protected $api = null;
+	public $api = null;
 	protected $_new_custom_fields = array();
 
 	/**
@@ -90,9 +92,24 @@ class GFEmma extends GFFeedAddOn {
 		if ( ! empty( $feed['meta']['custom_fields'] ) ) {
 
 			foreach ( $feed['meta']['custom_fields'] as $custom_field ) {
-				$member['fields'][ $custom_field['key'] ] = $this->get_field_value( $form, $entry, $custom_field['value'] );
-			}
+				if ( empty( $custom_field['value'] ) ) {
+					continue;
+				}
 
+				if ( ! empty( $custom_field['custom_key'] ) && ! $this->api->hasField( $custom_field['custom_key'] ) ) {
+					$created = $this->add_custom_field( $custom_field );
+
+					if ( is_wp_error( $created ) ) {
+						$this->log_error( __METHOD__ . '(): ' . $created->get_error_message() );
+						continue;
+					}
+				}
+
+				// Newly-added custom fields need a custom slug based on the custom_key param.
+				$slug = ! empty( $custom_field['custom_key'] ) ? sanitize_title_with_dashes( $custom_field['custom_key'] ) : $custom_field['key'];
+
+				$member['fields'][ $slug ] = $this->get_field_value( $form, $entry, $custom_field['value'] );
+			}
 		}
 
 		/* If no custom fields were added to the member array, remove it. */
@@ -104,17 +121,28 @@ class GFEmma extends GFFeedAddOn {
 		$this->log_debug( __METHOD__ . '(): Member to be added => ' . print_r( $member, true ) );
 		try {
 
+			$opt_in_enabled = $feed['meta']['double_optin'] == true;
+
 			/* If double optin, use membersSignup function. Otherwise, use addSingle function. */
-			if ( $feed['meta']['double_optin'] == true ) {
+			if ( $opt_in_enabled ) {
+				$this->log_debug( __METHOD__ . '(): Double Opt-In enabled. Sending request to the /members/signup endpoint.' );
 				$add_member = json_decode( $this->api->membersSignup( $member ) );
 			} else {
+				$this->log_debug( __METHOD__ . '(): Sending request to the /members/add endpoint.' );
 				$add_member = json_decode( $this->api->membersAddSingle( $member ) );
 			}
 
-			if ( $add_member->status == true ) {
-				$this->log_debug( __METHOD__ . "(): Member {$member['email']} added." );
-			} else {
-				$this->log_debug( __METHOD__ . "(): Member {$member['email']} already existed and has been updated." );
+			if ( $add_member->status === 'a' ) {
+				if ( $opt_in_enabled || rgobj( $add_member, 'added' ) ) {
+					$message = 'Member added.';
+				} else {
+					$message = 'Member already existed and has been updated.';
+				}
+				$this->log_debug( __METHOD__ . "(): Emma API returned active status for member {$member['email']}. {$message}" );
+			} elseif ( $add_member->status === 'e' ) {
+				$this->log_debug( __METHOD__ . "(): Emma API returned error status for member {$member['email']}." );
+			} elseif ( $add_member->status === 'o' ) {
+				$this->log_debug( __METHOD__ . "(): Emma API returned optout status for member {$member['email']}." );
 			}
 
 		} catch ( Exception $e ) {
@@ -125,6 +153,35 @@ class GFEmma extends GFFeedAddOn {
 
 	}
 
+	/**
+	 * Add a custom field in Emma.
+	 *
+	 * @since 1.3
+	 *
+	 * @param array $custom_field The custom field to add.
+	 *
+	 * @return string|WP_Error
+	 */
+	private function add_custom_field( $custom_field ) {
+		$custom_key  = $custom_field['custom_key'];
+		$custom_slug = sanitize_title_with_dashes( $custom_key );
+
+		$params = array(
+			'shortcut_name' => $custom_slug,
+			'display_name'  => $custom_key,
+			'field_type'    => 'text',
+			'widget_type'   => 'text',
+			'column_order'  => 1,
+		);
+
+		$added = $this->api->fieldsAddSingle( $params );
+
+		if ( empty( $added ) ) {
+			return new \WP_Error( 'Could not create custom Emma field ' . $custom_key );
+		}
+
+		return $added;
+	}
 
 	// # ADMIN FUNCTIONS -----------------------------------------------------------------------------------------------
 
@@ -140,6 +197,19 @@ class GFEmma extends GFFeedAddOn {
 				'option_label' => esc_html__( 'Subscribe member to Emma only when payment is received.', 'gravityformsemma' )
 			)
 		);
+
+	}
+
+	/**
+	 * Return the plugin's icon for the plugin/form settings menu.
+	 *
+	 * @since 1.3
+	 *
+	 * @return string
+	 */
+	public function get_menu_icon() {
+
+		return file_get_contents( $this->get_base_path() . '/images/menu-icon.svg' );
 
 	}
 
@@ -161,13 +231,6 @@ class GFEmma extends GFFeedAddOn {
 					) . '</p>',
 				'fields'      => array(
 					array(
-						'name'              => 'account_id',
-						'label'             => esc_html__( 'Account ID', 'gravityformsemma' ),
-						'type'              => 'text',
-						'class'             => 'medium',
-						'feedback_callback' => array( $this, 'has_valid_account_id' )
-					),
-					array(
 						'name'              => 'public_api_key',
 						'label'             => esc_html__( 'Public API Key', 'gravityformsemma' ),
 						'type'              => 'text',
@@ -180,6 +243,13 @@ class GFEmma extends GFFeedAddOn {
 						'type'              => 'text',
 						'class'             => 'medium',
 						'feedback_callback' => array( $this, 'initialize_api' )
+					),
+					array(
+						'name'              => 'account_id',
+						'label'             => esc_html__( 'Account ID', 'gravityformsemma' ),
+						'type'              => 'text',
+						'class'             => 'medium',
+						'feedback_callback' => array( $this, 'has_valid_account_id' )
 					),
 					array(
 						'type'     => 'save',
@@ -208,14 +278,14 @@ class GFEmma extends GFFeedAddOn {
 
 	/**
 	 * Enable feed duplication.
-	 * 
+	 *
 	 * @access public
 	 * @return bool
 	 */
 	public function can_duplicate_feed( $id ) {
-		
+
 		return true;
-		
+
 	}
 
 	/**
@@ -355,7 +425,7 @@ class GFEmma extends GFFeedAddOn {
 
 		// store a copy of the previous settings for cases where action would only happen if value has changed
 		$feed = $this->get_feed( $feed_id );
-		$this->set_previous_settings( $feed['meta'] );
+		$this->set_previous_settings( rgar( $feed, 'meta' ) );
 
 		$settings = $this->get_posted_settings();
 		$settings = $this->create_new_custom_fields( $settings );
@@ -501,14 +571,16 @@ class GFEmma extends GFFeedAddOn {
 			return true;
 		}
 
-		/* Load the Emma API library. */
-		require_once 'includes/api/Emma.php';
+		if ( ! class_exists( 'Emma' ) ) {
+			/* Load the Emma API library. */
+			require_once 'includes/api/Emma.php';
+		}
 
 		/* Get the plugin settings */
 		$settings = $this->get_plugin_settings();
 
 		/* If any of the account information fields are empty, return null. */
-		if ( rgblank( $settings['account_id'] ) || rgblank( $settings['public_api_key'] ) || rgblank( $settings['private_api_key'] ) ) {
+		if ( empty( $settings['account_id'] ) || empty( $settings['public_api_key'] ) || empty( $settings['private_api_key'] ) ) {
 			return null;
 		}
 
@@ -538,12 +610,14 @@ class GFEmma extends GFFeedAddOn {
 
 				return false;
 
-			} else if ( $e->getHttpCode() == 403 ) {
+			} elseif ( $e->getHttpCode() == 403 ) {
 
 				$this->log_error( __METHOD__ . '(): API credentials are valid, Account ID is invalid; ' . $e->getMessage() );
 
 				return true;
 
+			} else {
+				$this->log_error( __METHOD__ . '(): Unable to validate API credentials; ' . $e->getMessage() );
 			}
 
 		}
@@ -564,7 +638,7 @@ class GFEmma extends GFFeedAddOn {
 		$settings = $this->get_plugin_settings();
 
 		/* If any of the account information fields are empty, return null. */
-		if ( rgblank( $settings['account_id'] ) || rgblank( $settings['public_api_key'] ) || rgblank( $settings['private_api_key'] ) ) {
+		if ( empty( $settings['account_id'] ) || empty( $settings['public_api_key'] ) || empty( $settings['private_api_key'] ) ) {
 			return null;
 		}
 
@@ -582,6 +656,8 @@ class GFEmma extends GFFeedAddOn {
 			/* Log that test failed based on HTTP code. */
 			if ( $e->getHttpCode() == 403 ) {
 				$this->log_error( __METHOD__ . '(): API credentials are valid, Account ID is invalid; ' . $e->getMessage() );
+			} else {
+				$this->log_error( __METHOD__ . '(): Unable to validate Account ID; ' . $e->getMessage() );
 			}
 
 			return false;
